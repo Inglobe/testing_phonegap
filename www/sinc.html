@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, height=device-height, target-densitydpi=device-dpi" />
+        <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="css/style.css" />
+        <title>Calving App</title>
+    </head>
+    <body>
+        <div id="app" class="app" style="position:relative">
+            <img class="logo_install" src="img/logo.png"></img>
+            <div id="barra" class="progress-bar blue stripes">
+                <span style="width:0%" id="progreso"> </span>                
+            </div>            
+        </div>        
+        <script type="text/javascript" src="js/jquery.min.js"></script>
+        <script type="text/javascript" src="js/bootstrap.min.js"></script>        
+        <script type="text/javascript" src="js/index.js"></script>
+        <script type="text/javascript">
+            app.initialize();            
+        </script>
+    </body>
+</html>
+
+
+<script type="text/javascript">
+ 
+var db = openDatabase('uni_ohio','1','', 3*1024*1024);
+var indicador = $("#progreso");
+var por_bbdd_descarga = 50;
+var por_bbdd_subir = 50;
+
+function descargar_bbdd(){
+    var tablas=Array(
+        "configuracion",
+        "usuarios",
+        "vacas",
+        "partos",
+        "becerros",
+        "calostro"
+    );
+    descargar_tablas(db,tablas,0);
+}
+
+function descargar_tablas(db,tablas,index){
+    var total=tablas.length;
+    var indice=index;
+    var error = 0;
+    $.ajax({
+        type: "post",
+        url: "http://www.mobile-promotive.com.ar/uniohio/datos.php",
+        dataType: "text",
+        data: { accion: "descargar_datos", tabla: tablas[indice], init:'no' },
+        cache: false,
+        success: function( data ){
+            if(data){
+                var tmp_datos = data.split('###');
+                db.transaction(function(tx) {
+                    for(i=0;i<tmp_datos.length;i++){
+                        if(tmp_datos[i]!=''){ tx.executeSql(tmp_datos[i]); }
+                    }                               
+                }, function(){ error=1; }, function(){ error=0; } );
+            }
+            else{
+                error = 1;
+            }
+        },
+        complete: function(){ 
+            if(error==1){
+                $('#barra').removeClass("blue");
+                $('#barra').addClass("red");
+                setTimeout(
+                    function(){ location.replace('index.html'); },
+                    1000
+                );
+            }
+            else{
+                var ancho=por_bbdd_subir + (por_bbdd_descarga/tablas.length*(indice+1));
+                indicador.css("width",ancho+"%");
+                if(indice==(total-1)){
+                    $('#barra').removeClass("blue");
+                    $('#barra').addClass("green");
+                    indicador.css("width","100%")
+                    setTimeout(
+                        function(){ location.replace('index.html'); },
+                        1000
+                    );
+                }
+                else{
+                    descargar_tablas(db,tablas,(indice+1));
+                }
+            }           
+        },
+        error: function(){
+            $('#barra').removeClass("blue");
+            $('#barra').addClass("red");
+            setTimeout(
+                function(){ location.replace('index.html'); },
+                1000
+            );
+        }
+    });    
+}
+
+function subir_bbdd(){
+    var tablas=Array(
+        "vacas",
+        "partos",
+        "becerros",
+        "calostro"
+    );
+    subir_tablas(db,tablas,0);
+}
+
+function subir_tablas(db,tablas,index){
+    var total=tablas.length;
+    var indice=index;
+    registros=Array();
+    db.transaction(function(tx){tx.executeSql('select * from '+tablas[indice],[], function(tx, rs) {
+        if(rs.rows.length){
+            var registros = new Array();
+            for(i=0;i<rs.rows.length;i++){
+                registros[i]=rs.rows.item(i);
+            }
+        }
+        $.ajax({
+            url: 'http://www.mobile-promotive.com.ar/uniohio/datos.php',
+            type: 'POST',
+            data: {accion:'subir_datos',datos:registros,tabla:tablas[indice]},
+            success: function(data){
+                var ancho=por_bbdd_subir/tablas.length*(indice+1);
+                indicador.css("width",ancho+"%");
+                db.transaction(function(tx){tx.executeSql('delete from '+tablas[indice])});                        
+            },
+            complete: function(){
+                if(indice==(total-1)){
+                    descargar_bbdd();
+                }
+                else{
+                    subir_tablas(db,tablas,(indice+1));
+                }
+            }
+        });
+    })});
+}
+
+subir_bbdd();
+</script>
